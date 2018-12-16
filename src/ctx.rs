@@ -1,7 +1,6 @@
 use cudart::{CudaDevice};
 
 use std::cell::{Cell, RefCell};
-use std::marker::{Unpin};
 
 thread_local! {
   static ROOT_DEVICE:   Cell<Option<i32>> = Cell::new(None);
@@ -15,7 +14,6 @@ pub struct GpuCtxGuard {
 
 impl !Send for GpuCtxGuard {}
 impl !Sync for GpuCtxGuard {}
-impl !Unpin for GpuCtxGuard {}
 
 impl Drop for GpuCtxGuard {
   fn drop(&mut self) {

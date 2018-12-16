@@ -1,3 +1,5 @@
+#![feature(optin_builtin_traits)]
+
 extern crate cudart;
 //extern crate memrepr;
 
@@ -9,10 +11,17 @@ use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 pub mod ctx;
 
-pub trait GpuDelayed {
+pub trait GpuDelay {
+  type Target: Copy + 'static;
 }
 
-impl GpuDelayed for () {}
+pub trait GpuDelayed<V: GpuDelay> {
+  unsafe fn dptr(&self) -> *const V::Target;
+}
+
+pub trait GpuDelayedMut<V: GpuDelay>: GpuDelayed<V> {
+  unsafe fn dptr_mut(&self) -> *mut V::Target;
+}
 
 pub struct GpuUnsafePinnedMem<T: Copy + 'static> {
   ptr:  *mut T,
@@ -20,7 +29,8 @@ pub struct GpuUnsafePinnedMem<T: Copy + 'static> {
   bysz: usize,
 }
 
-impl<T: Copy + 'static> GpuDelayed for GpuUnsafePinnedMem<T> {
+impl<T: Copy + 'static> GpuDelay for GpuUnsafePinnedMem<T> {
+  type Target = T;
 }
 
 impl<T: Copy + 'static> GpuUnsafePinnedMem<T> {
@@ -45,7 +55,8 @@ pub struct GpuUnsafeMem<T: Copy + 'static> {
   dev:  i32,
 }
 
-impl<T: Copy + 'static> GpuDelayed for GpuUnsafeMem<T> {
+impl<T: Copy + 'static> GpuDelay for GpuUnsafeMem<T> {
+  type Target = T;
 }
 
 /*impl<T: ZeroBits + Copy + 'static> GpuUnsafeMem<T> {
@@ -74,5 +85,13 @@ impl<T: Copy + 'static> GpuUnsafeMem<T> {
   pub unsafe fn alloc(len: usize, dev: i32) -> GpuUnsafeMem<T> {
     // TODO
     unimplemented!();
+  }
+
+  pub unsafe fn as_devptr(&self) -> *const T {
+    self.dptr
+  }
+
+  pub unsafe fn as_devptr_mut(&self) -> *mut T {
+    self.dptr
   }
 }
