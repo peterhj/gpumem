@@ -1,3 +1,5 @@
+use crate::{GpuDev};
+
 use cudart::{CudaDevice};
 
 use std::cell::{Cell, RefCell};
@@ -34,7 +36,7 @@ impl Drop for GpuCtxGuard {
 }
 
 impl GpuCtxGuard {
-  pub fn new(dev: i32) -> GpuCtxGuard {
+  pub fn new(dev: GpuDev) -> GpuCtxGuard {
     DEVICE_STACK.with(|dev_stack| {
       ROOT_DEVICE.with(|root_dev| {
         let mut dev_stack = dev_stack.borrow_mut();
@@ -61,14 +63,14 @@ impl GpuCtxGuard {
             dev_stack[depth - 1]
           }
         };
-        match CudaDevice::set_current(dev) {
+        match CudaDevice::set_current(dev.0) {
           Err(e) => {
             panic!("set current device failed: {:?} ({})", e, e.get_string());
           }
           Ok(_) => {}
         }
-        dev_stack.push(dev);
-        GpuCtxGuard{dev, pop}
+        dev_stack.push(dev.0);
+        GpuCtxGuard{dev: dev.0, pop}
       })
     })
   }
