@@ -13,6 +13,15 @@ use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 pub mod ctx;
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct GpuDev(pub i32);
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum GpuDom {
+  Host,
+  Dev(GpuDev),
+}
+
 pub trait GpuDelay {
   type Data: Copy + 'static;
 }
@@ -24,23 +33,23 @@ impl GpuDelay for () {
 }
 
 pub trait GpuDelayed<V: GpuDelay>: Deref<Target=V> {
-  fn delayed_ptr(&self) -> *const V::Data;
+  fn domain(&self) -> GpuDom;
+  fn delayed_ptr(&self) -> *const <V as GpuDelay>::Data;
 }
 
-pub trait GpuDelayedMut<V: GpuDelay>: Deref<Target=V> {
-  fn delayed_ptr_mut(&self) -> *mut V::Data;
+pub trait GpuDelayedMut<V: GpuDelay>: GpuDelayed<V> {
+  fn delayed_ptr_mut(&self) -> *mut <V as GpuDelay>::Data;
 }
 
 pub trait GpuRegion<T: Copy + 'static> {
-  unsafe fn as_devptr(&self) -> *const T;
+  fn device(&self) -> GpuDev;
+  fn as_devptr(&self) -> *const T;
+  fn region_len(&self) -> usize;
 }
 
-pub trait GpuRegionMut<T: Copy + 'static> {
-  unsafe fn as_devptr_mut(&self) -> *mut T;
+pub trait GpuRegionMut<T: Copy + 'static>: GpuRegion<T> {
+  fn as_devptr_mut(&self) -> *mut T;
 }
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct GpuDev(pub i32);
 
 pub struct GpuPinnedMem<T: Copy + 'static> {
   ptr:  *mut T,
@@ -84,13 +93,21 @@ impl<T: Copy + 'static> GpuDelay for GpuVMem<T> {
 }
 
 impl<T: Copy + 'static> GpuRegion<T> for GpuVMem<T> {
-  unsafe fn as_devptr(&self) -> *const T {
+  fn device(&self) -> GpuDev {
+    self.dev
+  }
+
+  fn as_devptr(&self) -> *const T {
     self.dptr
+  }
+
+  fn region_len(&self) -> usize {
+    self.len
   }
 }
 
 impl<T: Copy + 'static> GpuRegionMut<T> for GpuVMem<T> {
-  unsafe fn as_devptr_mut(&self) -> *mut T {
+  fn as_devptr_mut(&self) -> *mut T {
     self.dptr
   }
 }
