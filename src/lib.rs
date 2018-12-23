@@ -1,3 +1,4 @@
+#![feature(align_offset)]
 #![feature(optin_builtin_traits)]
 
 extern crate cudart;
@@ -7,8 +8,8 @@ use crate::ctx::{GpuCtxGuard};
 
 use cudart::{CudaStream, cuda_alloc_device, cuda_free_device};
 
-use std::mem::{size_of};
-use std::ops::{Deref};
+use std::mem::{align_of, size_of};
+use std::ops::{Deref, RangeBounds, Bound};
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 pub mod ctx;
@@ -120,8 +121,8 @@ impl<T: Copy + 'static> Drop for GpuVMem<T> {
     // <https://cs.unc.edu/~tamert/papers/ecrts18b.pdf>
     unsafe {
       match cuda_free_device(self.dptr) {
-        Err(e) => panic!("cudaFree failed: {:?} ({})", e, e.get_string()),
         Ok(_) => {}
+        Err(e) => panic!("cudaFree failed: {:?} ({})", e, e.get_string()),
       }
     }
   }
@@ -130,31 +131,76 @@ impl<T: Copy + 'static> Drop for GpuVMem<T> {
 impl<T: Copy + 'static> GpuVMem<T> {
   pub unsafe fn alloc(len: usize, dev: GpuDev) -> GpuVMem<T> {
     let _ctx = GpuCtxGuard::new(dev);
+    let size = len * size_of::<T>();
     // NB: This _may_ implicitly synchronize; see:
     // <https://github.com/thrust/thrust/issues/905>
-    let dptr = match cuda_alloc_device(len) {
-      Err(e) => panic!("cudaMalloc failed: {:?} ({})", e, e.get_string()),
+    let raw_dptr: *mut u8 = match cuda_alloc_device(size) {
       Ok(dptr) => dptr,
+      Err(e) => panic!("cudaMalloc failed: {:?} ({})", e, e.get_string()),
     };
+    // NB: Non-aligned accesses are sort of supported, but can be totally broken
+    // for some word sizes (namely, 8 and 16 bytes). Easier to enforce alignment
+    // at all stages, including here during allocation.
+    //
+    // Also see section 5.3.2 of the CUDA C programming guide:
+    // <https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#device-memory-accesses>.
+    let dptr: *mut T = raw_dptr as *mut T;
+    match (size_of::<T>() % align_of::<T>(), dptr.align_offset(align_of::<T>())) {
+      (0, 0) => {}
+      (0, _) => panic!("cudaMalloc returned non-naturally aligned pointer"),
+      (_, _) => panic!("size is not a multiple of alignment"),
+    }
     GpuVMem{
       dev,
       dptr,
       len,
     }
   }
-}
 
-/*impl<T: ZeroBits + Copy + 'static> GpuVMem<T> {
-  pub unsafe fn set_zeros(&self, stream: &mut CudaStream) {
-    let res = cuda_memset_async(
-        self.dptr as *mut u8,
-        0,
-        self.len * size_of::<T>(),
-        stream,
-    );
-    match res {
-      Err(_) => panic!(),
-      Ok(_) => {}
+  pub fn slice<R: RangeBounds<usize>>(&self, range: R) -> GpuUnsafeSlice<T> {
+    let start = match range.start_bound() {
+      Bound::Included(idx) => *idx,
+      Bound::Excluded(idx) => *idx + 1,
+      Bound::Unbounded => 0,
+    };
+    let end = match range.end_bound() {
+      Bound::Included(idx) => *idx + 1,
+      Bound::Excluded(idx) => *idx,
+      Bound::Unbounded => self.len,
+    };
+    assert!(start <= end);
+    assert!(end <= self.len);
+    let slice_dptr = unsafe { self.dptr.offset(start as isize) };
+    GpuUnsafeSlice{
+      dev:  self.dev,
+      dptr: slice_dptr,
+      len:  end - start,
     }
   }
-}*/
+}
+
+pub struct GpuUnsafeSlice<T: Copy + 'static> {
+  dev:  GpuDev,
+  dptr: *mut T,
+  len:  usize,
+}
+
+impl<T: Copy + 'static> GpuRegion<T> for GpuUnsafeSlice<T> {
+  fn device(&self) -> GpuDev {
+    self.dev
+  }
+
+  fn as_devptr(&self) -> *const T {
+    self.dptr
+  }
+
+  fn region_len(&self) -> usize {
+    self.len
+  }
+}
+
+impl<T: Copy + 'static> GpuRegionMut<T> for GpuUnsafeSlice<T> {
+  fn as_devptr_mut(&self) -> *mut T {
+    self.dptr
+  }
+}
