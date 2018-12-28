@@ -25,7 +25,7 @@ impl Drop for GpuCtxGuard {
         None => panic!("bug"),
         Some(d) => assert_eq!(d, self.dev),
       }
-      match CudaDevice::set_current(self.pop) {
+      match CudaDevice(self.pop).set_current() {
         Err(e) => {
           panic!("set current device failed: {:?} ({})", e, e.get_string());
         }
@@ -49,8 +49,8 @@ impl GpuCtxGuard {
                   Err(e) => {
                     panic!("get current device failed: {:?} ({})", e, e.get_string());
                   }
-                  Ok(dev) => {
-                    dev
+                  Ok(device) => {
+                    device.0
                   }
                 };
                 root_dev.set(Some(curr_dev));
@@ -63,7 +63,7 @@ impl GpuCtxGuard {
             dev_stack[depth - 1]
           }
         };
-        match CudaDevice::set_current(dev.0) {
+        match CudaDevice(dev.0).set_current() {
           Err(e) => {
             panic!("set current device failed: {:?} ({})", e, e.get_string());
           }

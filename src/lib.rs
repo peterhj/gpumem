@@ -120,7 +120,7 @@ impl<T: Copy + 'static> Drop for GpuVMem<T> {
     // <https://github.com/thrust/thrust/issues/905>
     // <https://cs.unc.edu/~tamert/papers/ecrts18b.pdf>
     unsafe {
-      match cuda_free_device(self.dptr) {
+      match cuda_free_device(self.dptr as *mut u8) {
         Ok(_) => {}
         Err(e) => panic!("cudaFree failed: {:?} ({})", e, e.get_string()),
       }
