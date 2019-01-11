@@ -2,7 +2,6 @@
 #![feature(optin_builtin_traits)]
 
 extern crate cudart;
-//extern crate memrepr;
 
 use crate::ctx::{GpuCtxGuard};
 
@@ -35,11 +34,11 @@ impl GpuDelay for () {
 
 pub trait GpuDelayed<V: GpuDelay>: Deref<Target=V> {
   fn domain(&self) -> GpuDom;
-  fn delayed_ptr(&self) -> *const <V as GpuDelay>::Data;
+  //fn delayed_ptr(&self) -> *const <V as GpuDelay>::Data;
 }
 
 pub trait GpuDelayedMut<V: GpuDelay>: GpuDelayed<V> {
-  fn delayed_ptr_mut(&self) -> *mut <V as GpuDelay>::Data;
+  //fn delayed_ptr_mut(&self) -> *mut <V as GpuDelay>::Data;
 }
 
 pub trait GpuRegion<T: Copy + 'static> {
