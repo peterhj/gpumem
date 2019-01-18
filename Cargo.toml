@@ -8,11 +8,5 @@ edition = "2018"
 name = "gpurepr"
 path = "src/lib.rs"
 
-#[features]
-#default = []
-#f16 = ["float"]
-
 [dependencies]
-cudart = { git = "https://github.com/peterhj/cudart" }
-#float = { version = "*", optional = true }
-#memrepr = { git = "https://github.com/peterhj/memrepr" }
+cudart = { git = "https://github.com/peterhj/cudart", features = ["cuda_10_0"] }

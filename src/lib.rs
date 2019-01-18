@@ -33,7 +33,7 @@ impl GpuDelay for () {
 }
 
 pub trait GpuDelayed<V: GpuDelay>: Deref<Target=V> {
-  fn domain(&self) -> GpuDom;
+  //fn domain(&self) -> GpuDom;
   //fn delayed_ptr(&self) -> *const <V as GpuDelay>::Data;
 }
 
