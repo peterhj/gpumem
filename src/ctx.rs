@@ -1,77 +1,58 @@
-use crate::{GpuDev};
+use crate::{GpuLoc, GpuDev};
 
-use cudart::{CudaDevice};
+use cuda::runtime::{CudaDevice};
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell};
 
 thread_local! {
-  static ROOT_DEVICE:   Cell<Option<i32>> = Cell::new(None);
-  static DEVICE_STACK:  RefCell<Vec<i32>> = RefCell::new(Vec::new());
+  static TL_PCTX_STATE: Cell<CudaPCtxState> = Cell::new(CudaPCtxState::Rst);
 }
 
-pub struct GpuCtxGuard {
-  dev:  i32,
-  pop:  i32,
+#[derive(Clone, Copy)]
+enum CudaPCtxState {
+  Rst,
+  Drp(GpuDev),
+  Set(GpuDev),
 }
 
-impl !Send for GpuCtxGuard {}
-impl !Sync for GpuCtxGuard {}
+pub struct CudaPCtxRef {
+  dev: GpuDev,
+}
 
-impl Drop for GpuCtxGuard {
+impl Drop for CudaPCtxRef {
   fn drop(&mut self) {
-    DEVICE_STACK.with(|dev_stack| {
-      let mut dev_stack = dev_stack.borrow_mut();
-      match dev_stack.pop() {
-        None => panic!("bug"),
-        Some(d) => assert_eq!(d, self.dev),
+    match TL_PCTX_STATE.with(|state| state.get()) {
+      CudaPCtxState::Rst => panic!(),
+      CudaPCtxState::Drp(_) => panic!(),
+      CudaPCtxState::Set(prev_dev) => {
+        assert_eq!(prev_dev, self.dev);
+        TL_PCTX_STATE.with(|state| state.set(CudaPCtxState::Drp(self.dev)));
       }
-      match CudaDevice(self.pop).set_current() {
-        Err(e) => {
-          panic!("set current device failed: {:?} ({})", e, e.get_string());
-        }
-        Ok(_) => {}
-      }
-    });
+    }
   }
 }
 
-impl GpuCtxGuard {
-  pub fn new(dev: GpuDev) -> GpuCtxGuard {
-    DEVICE_STACK.with(|dev_stack| {
-      ROOT_DEVICE.with(|root_dev| {
-        let mut dev_stack = dev_stack.borrow_mut();
-        let depth = dev_stack.len();
-        let pop = match depth {
-          0 => {
-            match root_dev.get() {
-              None => {
-                let curr_dev = match CudaDevice::get_current() {
-                  Err(e) => {
-                    panic!("get current device failed: {:?} ({})", e, e.get_string());
-                  }
-                  Ok(device) => {
-                    device.0
-                  }
-                };
-                root_dev.set(Some(curr_dev));
-                curr_dev
-              }
-              Some(d) => d,
-            }
-          }
-          _ => {
-            dev_stack[depth - 1]
-          }
-        };
-        match CudaDevice(dev.0).set_current() {
-          Err(e) => {
-            panic!("set current device failed: {:?} ({})", e, e.get_string());
-          }
-          Ok(_) => {}
+impl GpuLoc for CudaPCtxRef {
+  fn device(&self) -> GpuDev {
+    self.dev
+  }
+}
+
+impl CudaPCtxRef {
+  pub fn set(dev: GpuDev) -> CudaPCtxRef {
+    match TL_PCTX_STATE.with(|state| state.get()) {
+      CudaPCtxState::Rst => {
+        CudaDevice(dev.0).set_current().unwrap();
+        TL_PCTX_STATE.with(|state| state.set(CudaPCtxState::Set(dev)));
+      }
+      CudaPCtxState::Drp(prev_dev) => {
+        if prev_dev != dev {
+          CudaDevice(dev.0).set_current().unwrap();
         }
-        dev_stack.push(dev.0);
-        GpuCtxGuard{dev: dev.0, pop}
-      })
-    })
+        TL_PCTX_STATE.with(|state| state.set(CudaPCtxState::Set(dev)));
+      }
+      CudaPCtxState::Set(prev_dev) => panic!(),
+    }
+    CudaPCtxRef{dev}
   }
 }

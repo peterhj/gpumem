@@ -4,9 +4,8 @@ authors = ["Peter Jin <peterhaijin@gmail.com>"]
 version = "0.0.0"
 edition = "2018"
 
-[lib]
-name = "gpurepr"
-path = "src/lib.rs"
-
 [dependencies]
-cudart = { git = "https://github.com/peterhj/cudart", features = ["cuda_10_0"] }
+cuda = { path = "../libcuda" }
+#cuda = "~0.4.0-pre.0"
+podmem = { path = "../podmem", features = ["cuda"] }
+#podmem = { git = "https://github.com/peterhj/podmem", features = ["cuda"] }
